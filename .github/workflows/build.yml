@@ -63,8 +63,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build with PyInstaller
-        env:
-          PYTHON: /opt/python/cp312-cp312/bin/python3
         run: .github/run-logged.sh packaging/build-portable.sh
       - uses: actions/upload-artifact@v4
         with:

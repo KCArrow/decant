@@ -685,8 +685,8 @@ class Helper:
                 if hashlib.sha256(mv[:want]).digest() != expected:
                     raise HelperError(
                         "verify_mismatch",
-                        "Verification failed: the data read back from the drive differs from the image "
-                        "between %s and %s. The drive may be faulty or smaller than it claims."
+                        "The data read back from the drive differs from the image between %s and %s. "
+                        "The drive may be faulty, or smaller than it claims."
                         % (fmt_bytes(done), fmt_bytes(done + want)),
                     )
                 done += want
@@ -1047,7 +1047,40 @@ def apply_theme(app: QApplication):
     tokens = dict(GROUND=GROUND, SURFACE=SURFACE, SURFACE_2=SURFACE_2, LINE=LINE, TEXT=TEXT,
                   MUTED=MUTED, FAINT=FAINT, AMBER=AMBER, AMBER_HI=AMBER_HI, AMBER_DEEP=AMBER_DEEP,
                   AMBER_CLEAR=AMBER_CLEAR, DANGER=DANGER, TEXTF=TEXT_FAMILY)
-    app.setStyleSheet(QSS.substitute(tokens))
+    qss = QSS.substitute(tokens)
+    check = _check_mark_file()
+    if check:
+        qss += "QCheckBox::indicator:checked { image: url(%s); }\n" % check
+    app.setStyleSheet(qss)
+
+
+def _check_mark_file() -> str | None:
+    """Draw the checkbox tick to a PNG (plus an @2x copy for HiDPI) that the
+    stylesheet can reference. Returns its path, or None if it can't be written."""
+    import tempfile
+    base = os.path.join(tempfile.gettempdir(), "decant-%d-check" % os.getuid())
+    try:
+        for scale, suffix in ((1, ""), (2, "@2x")):
+            size = 14 * scale
+            pm = QPixmap(size, size)
+            pm.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            pen = QPen(QColor(GROUND), 2.0 * scale)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen)
+            path = QPainterPath()
+            path.moveTo(3.2 * scale, 7.2 * scale)
+            path.lineTo(5.9 * scale, 9.9 * scale)
+            path.lineTo(10.8 * scale, 4.3 * scale)
+            p.drawPath(path)
+            p.end()
+            if not pm.save(base + suffix + ".png"):
+                return None
+    except OSError:
+        return None
+    return base + ".png"
 
 
 def set_role(w: QWidget, prop: str, value: str):
@@ -1823,6 +1856,8 @@ class StepColumn(QWidget):
 
     def __init__(self, button_text, variant="secondary", parent=None):
         super().__init__(parent)
+        # Same height in every state, so the step track above never shifts.
+        self.setFixedHeight(132)
         v = QVBoxLayout(self)
         v.setContentsMargins(8, 0, 8, 0)
         v.setSpacing(4)
@@ -2053,6 +2088,11 @@ class MainWindow(QMainWindow):
         # Don't wipe a notice that's still on screen (e.g. "was unplugged").
         if self.stack.currentIndex() == 0 and not self.notice_timer.isActive():
             self._reset_footer()
+        # Keyboard focus follows the next step.
+        if self.stack.currentIndex() == 0:
+            nxt = (self.col_image.button if not img else
+                   self.col_drive.button if not drv else self.col_flash.button)
+            nxt.setFocus()
 
     def pick_image(self):
         start = self.settings.value("last_dir", "") or os.path.expanduser("~/Downloads")
@@ -2613,7 +2653,7 @@ def render_screenshots(outdir: str) -> int:
         frac = t / write_secs
         win._on_progress({"phase": "writing", "t": t, "in": int(frac * DEMO_IMAGE["size"]),
                           "in_total": DEMO_IMAGE["size"], "out": int(frac * usize)})
-    win.vessel.set_levels(level=72 * 0.5 / write_secs, snap=True)
+    win.vessel.set_levels(level=144 * 0.5 / write_secs, snap=True)
     win.vessel.t = 1.3
     shot(win, "05-writing")
 
@@ -2633,9 +2673,8 @@ def render_screenshots(outdir: str) -> int:
     shot(win, "07-done")
 
     win._show_result("error", {"code": "verify_mismatch", "msg":
-                               "Verification failed: the data read back from the drive differs from "
-                               "the image between 1.21 GB and 1.24 GB. The drive may be faulty or "
-                               "smaller than it claims."})
+                               "The data read back from the drive differs from the image between "
+                               "1.21 GB and 1.24 GB. The drive may be faulty, or smaller than it claims."})
     shot(win, "08-verify-failed")
     win.close()
     return 0

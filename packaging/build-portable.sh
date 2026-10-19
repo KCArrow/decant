@@ -22,6 +22,10 @@ if [ -f /etc/almalinux-release ] && command -v dnf >/dev/null; then
         xcb-util-image xcb-util-keysyms xcb-util-renderutil libX11 libxcb mesa-libEGL mesa-libGL \
         fontconfig freetype dbus-libs glib2 libwayland-client libwayland-cursor libwayland-egl
     rpm -q xcb-util-cursor libxkbcommon-x11 || true
+    # PyInstaller needs a Python built with a shared libpython; the /opt/python
+    # builds in manylinux images are static, the distro's python3.12 is not.
+    dnf install -y -q python3.12 python3.12-pip
+    PY=${PYTHON:-python3.12}
 fi
 
 "$PY" -m venv .build-venv
