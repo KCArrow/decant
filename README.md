@@ -147,7 +147,7 @@ On every push, GitHub Actions does three things:
 - renders every screen;
 - builds the portable binary in the `manylinux_2_28` container and tests it on Rocky Linux 9 and Arch.
 
-Pushing a `v*` tag publishes a release with `decant.py`, `decant-x86_64` and `SHA256SUMS`.
+To publish a release, set `VERSION` in `decant.py`, push, then open **Actions → build → Run workflow** with **Publish release** ticked. Pushing a matching `v*` tag does the same. Either way, the release gets `decant.py`, `decant-x86_64` and `SHA256SUMS`, and only after every test above passes.
 
 ## License
 
