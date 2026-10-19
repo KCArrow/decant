@@ -15,10 +15,13 @@ PY=${PYTHON:-python3}
 # Inside the manylinux image: install the X11/xcb libraries Qt's xcb plugin
 # links against, so PyInstaller can find and bundle them.
 if [ -f /etc/almalinux-release ] && command -v dnf >/dev/null; then
-    dnf install -y -q epel-release
-    dnf install -y -q libxkbcommon libxkbcommon-x11 xcb-util-cursor xcb-util-wm xcb-util-image \
-        xcb-util-keysyms xcb-util-renderutil libX11 libxcb mesa-libEGL mesa-libGL fontconfig \
-        freetype dbus-libs glib2 libwayland-client libwayland-cursor libwayland-egl
+    dnf install -y -q epel-release || echo "warning: EPEL unavailable"
+    # strict=0: skip any name this release doesn't carry instead of failing;
+    # a library that isn't bundled just has to come from the user's system.
+    dnf install -y -q --setopt=strict=0 libxkbcommon libxkbcommon-x11 xcb-util-cursor xcb-util-wm \
+        xcb-util-image xcb-util-keysyms xcb-util-renderutil libX11 libxcb mesa-libEGL mesa-libGL \
+        fontconfig freetype dbus-libs glib2 libwayland-client libwayland-cursor libwayland-egl
+    rpm -q xcb-util-cursor libxkbcommon-x11 || true
 fi
 
 "$PY" -m venv .build-venv

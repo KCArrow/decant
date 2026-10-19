@@ -24,6 +24,8 @@ jobs:
   screenshots:
     name: Render screens
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # commits the README screenshots when they change
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,11 +41,20 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           QT_SCALE_FACTOR: "2"
-        run: python decant.py --screenshots screenshots
+        run: python decant.py --screenshots docs/screenshots
       - uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: screenshots/
+          path: docs/screenshots/
+      - name: Commit the screenshots if they changed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then echo "Screenshots unchanged"; exit 0; fi
+          git commit -m "Update screenshots [skip ci]"
+          git push || { git pull --rebase origin main && git push; }
 
   portable:
     name: Build portable binary
@@ -52,7 +63,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build with PyInstaller
-        run: PYTHON=/opt/python/cp312-cp312/bin/python3 packaging/build-portable.sh
+        env:
+          PYTHON: /opt/python/cp312-cp312/bin/python3
+        run: .github/run-logged.sh packaging/build-portable.sh
       - uses: actions/upload-artifact@v4
         with:
           name: decant-x86_64
@@ -69,42 +82,27 @@ jobs:
           - distro: rocky9
             image: rockylinux:9
             setup: >-
-              dnf install -y -q bzip2 util-linux diffutils mesa-libEGL mesa-libGL libxkbcommon
+              dnf install -y -q git bzip2 util-linux diffutils mesa-libEGL mesa-libGL libxkbcommon
               fontconfig dejavu-sans-fonts dbus-libs glib2 libX11 libxcb libwayland-client
               libwayland-cursor libwayland-egl freetype libstdc++
           - distro: arch
             image: archlinux:latest
             setup: >-
-              pacman -Syu --noconfirm --quiet bzip2 util-linux diffutils mesa libxkbcommon
+              pacman -Syu --noconfirm --quiet git bzip2 util-linux diffutils mesa libxkbcommon
               fontconfig ttf-dejavu dbus glib2 libx11 libxcb wayland freetype2
     container: ${{ matrix.image }}
     steps:
+      - name: Install what a typical desktop already has
+        run: ${{ matrix.setup }}
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: decant-x86_64
           path: bin
-      - name: Install what a typical desktop already has
-        run: ${{ matrix.setup }}
-      - name: Version and drive list
-        run: |
-          chmod +x bin/decant-x86_64
-          bin/decant-x86_64 --version
-          bin/decant-x86_64 --list-drives
-      - name: Flash a bzip2 image to a file and verify it
-        run: |
-          head -c 20000000 /dev/urandom > img
-          head -c 20000000 /dev/zero >> img
-          bzip2 -k img
-          : > out
-          bin/decant-x86_64 --helper --source img.bz2 --target out --decompressor bzcat \
-            --verify --allow-file --no-stdin | tail -n 1 | tee result.json
-          grep -q '"verified": true' result.json
-          cmp img out
-      - name: The window renders
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: bin/decant-x86_64 --screenshots shots
+      - name: Version, drive list, a real flash and verify, and the window
+        run: bash .github/run-logged.sh bash packaging/smoke-test.sh bin/decant-x86_64 shots
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: portable-screens-${{ matrix.distro }}
           path: shots/
