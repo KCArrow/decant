@@ -74,6 +74,11 @@ Decant also flashes xz, gzip and zstd images and uncompressed `.img`/`.iso` file
 
 Decant then reads the whole image back from the drive to verify it and ejects the drive. You can unplug it when it says so.
 
+<p>
+  <img src="docs/screenshots/05-writing.png" width="49%" alt="Writing at 60 percent: the circle fills with amber, with the speed and time left below">
+  <img src="docs/screenshots/07-done.png" width="49%" alt="Flashed and verified, with the size, time and average speed">
+</p>
+
 **Options** (top right):
 
 - **Verify after writing**: read the drive back and compare. On by default.
@@ -82,6 +87,8 @@ Decant then reads the whole image back from the drive to verify it and ejects th
 - **Add Decant to the application menu**: same as `--install`.
 
 ## Protection against erasing the wrong disk
+
+<img src="docs/screenshots/03-drives.png" width="60%" alt="The drive list: removable drives first, a large drive and an internal drive flagged, and the system drive greyed out">
 
 - **System drives can't be chosen.** That means any drive holding `/`, `/boot`, `/home`, `/usr`, `/var` or swap.
 - **Drives in use can't be chosen.** That covers drives used by LVM, LUKS encryption, software RAID or a ZFS pool, and read-only drives.

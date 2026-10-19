@@ -24,8 +24,9 @@ if [ -f /etc/almalinux-release ] && command -v dnf >/dev/null; then
     rpm -q xcb-util-cursor libxkbcommon-x11 || true
     # PyInstaller needs a Python built with a shared libpython; the /opt/python
     # builds in manylinux images are static, the distro's python3.12 is not.
+    # (Absolute path: manylinux images put their static python3.12 first on PATH.)
     dnf install -y -q python3.12 python3.12-pip
-    PY=${PYTHON:-python3.12}
+    PY=${PYTHON:-/usr/bin/python3.12}
 fi
 
 "$PY" -m venv .build-venv
