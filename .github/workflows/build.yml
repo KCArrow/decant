@@ -1,0 +1,137 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Engine tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install decompressors
+        run: sudo apt-get update -q && sudo apt-get install -y -q bzip2 lbzip2 xz-utils gzip zstd
+      - name: Run tests as root (includes real loop block devices)
+        run: sudo python3 -m unittest discover -s tests -v
+
+  screenshots:
+    name: Render screens
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Qt runtime libraries and a font
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libegl1 libgl1 libopengl0 libxkbcommon0 libfontconfig1 \
+            libdbus-1-3 fonts-ibm-plex
+      - run: pip install PySide6-Essentials
+      - name: Render every screen with demo data
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_SCALE_FACTOR: "2"
+        run: python decant.py --screenshots screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+
+  portable:
+    name: Build portable binary
+    runs-on: ubuntu-latest
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with PyInstaller
+        run: PYTHON=/opt/python/cp312-cp312/bin/python3 packaging/build-portable.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decant-x86_64
+          path: dist/decant-x86_64
+
+  portable-smoke:
+    name: Portable on ${{ matrix.distro }}
+    needs: portable
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: rocky9
+            image: rockylinux:9
+            setup: >-
+              dnf install -y -q bzip2 util-linux diffutils mesa-libEGL mesa-libGL libxkbcommon
+              fontconfig dejavu-sans-fonts dbus-libs glib2 libX11 libxcb libwayland-client
+              libwayland-cursor libwayland-egl freetype libstdc++
+          - distro: arch
+            image: archlinux:latest
+            setup: >-
+              pacman -Syu --noconfirm --quiet bzip2 util-linux diffutils mesa libxkbcommon
+              fontconfig ttf-dejavu dbus glib2 libx11 libxcb wayland freetype2
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: decant-x86_64
+          path: bin
+      - name: Install what a typical desktop already has
+        run: ${{ matrix.setup }}
+      - name: Version and drive list
+        run: |
+          chmod +x bin/decant-x86_64
+          bin/decant-x86_64 --version
+          bin/decant-x86_64 --list-drives
+      - name: Flash a bzip2 image to a file and verify it
+        run: |
+          head -c 20000000 /dev/urandom > img
+          head -c 20000000 /dev/zero >> img
+          bzip2 -k img
+          : > out
+          bin/decant-x86_64 --helper --source img.bz2 --target out --decompressor bzcat \
+            --verify --allow-file --no-stdin | tail -n 1 | tee result.json
+          grep -q '"verified": true' result.json
+          cmp img out
+      - name: The window renders
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: bin/decant-x86_64 --screenshots shots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-screens-${{ matrix.distro }}
+          path: shots/
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, screenshots, portable-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: decant-x86_64
+          path: dist
+      - name: Check the tag matches the version in decant.py
+        run: |
+          v=$(python3 decant.py --version | awk '{print $2}')
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME but decant.py says $v"; exit 1; }
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp decant.py dist/
+          chmod +x dist/decant.py dist/decant-x86_64
+          (cd dist && sha256sum decant.py decant-x86_64 > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" dist/decant.py dist/decant-x86_64 dist/SHA256SUMS \
+            --title "Decant ${GITHUB_REF_NAME#v}" --notes-file .github/release-notes.md
